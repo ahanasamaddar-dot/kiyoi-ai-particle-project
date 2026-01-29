@@ -244,17 +244,30 @@ class OlafActor:
 
 def listen_for_olaf(olaf_actor):
     recognizer = sr.Recognizer()
+    # Performance Tweaks
+    recognizer.pause_threshold = 0.5  # Detect end of speech Faster (default 0.8)
+    recognizer.energy_threshold = 300 
+    recognizer.dynamic_energy_threshold = True
+    
     mic = sr.Microphone()
     print("Voice Recognition for Elsa3 Started. Say 'Hi Olaf'!")
     
+    # Pre-adjust for noise once at startup
+    with mic as source:
+        print("Adjusting for ambient noise... please wait.")
+        recognizer.adjust_for_ambient_noise(source, duration=1)
+    
+    keywords = ["hi olaf", "hey olaf", "hi all of", "hey all of", "high olaf", "hay olaf"]
+    
     while True:
         with mic as source:
-            recognizer.adjust_for_ambient_noise(source)
             try:
-                audio = recognizer.listen(source, timeout=5, phrase_time_limit=3)
+                # listen for 4 seconds max, phrase length 3s
+                audio = recognizer.listen(source, timeout=4, phrase_time_limit=3)
                 text = recognizer.recognize_google(audio).lower()
                 print(f"Elsa3 Heard: {text}")
-                if "hi olaf" in text or "hey olaf" in text:
+                
+                if any(kw in text for kw in keywords):
                     olaf_actor.trigger()
             except sr.WaitTimeoutError:
                 pass
