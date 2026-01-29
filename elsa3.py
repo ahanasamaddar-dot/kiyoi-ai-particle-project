@@ -6,7 +6,9 @@ import math
 import time
 import os
 import urllib.request
+import threading
 import numpy as np
+import speech_recognition as sr
 from PIL import Image, ImageSequence
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -23,10 +25,17 @@ SEGMENTATION_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/image_
 
 BACKGROUND_IMAGE_PATH = "ice_background.jpg"
 BACKGROUND_AUDIO_PATH = "let_it_go.mp3"
+OLAF_GIF_PATH = "olaf_gif2.gif"
 
 # --- Constants for Face Landmarks ---
 FOREHEAD_TOP = 10
 
+def download_models():
+    models = [
+        (FACE_MODEL_FILE, FACE_MODEL_URL),
+        (HAND_MODEL_FILE, HAND_MODEL_URL),
+        (SEGMENTATION_MODEL_FILE, SEGMENTATION_MODEL_URL)
+    ]
     for file, url in models:
         if not os.path.exists(file):
             print(f"Downloading {file}...")
@@ -35,6 +44,26 @@ FOREHEAD_TOP = 10
                 print("Download Complete.")
             except Exception as e:
                 print(f"Error downloading {file}: {e}")
+
+def load_gif_frames(path, size=None):
+    if not os.path.exists(path):
+        return []
+    with Image.open(path) as img:
+        frames = []
+        for frame in ImageSequence.Iterator(img):
+            frame_rgba = frame.convert('RGBA')
+            if size:
+                frame_rgba = frame_rgba.resize(size, Image.Resampling.LANCZOS)
+            
+            # Simple Background Removal: turn white/near-white to transparent
+            data = np.array(frame_rgba)
+            r, g, b, a = data[:,:,0], data[:,:,1], data[:,:,2], data[:,:,3]
+            # Threshold for "white": all channels > 240
+            white_mask = (r > 240) & (g > 240) & (b > 240)
+            data[white_mask, 3] = 0 # Set alpha to 0 for white pixels
+            
+            frames.append(data)
+        return frames
 
 # --- Classes ---
 class Diamond:
@@ -166,8 +195,75 @@ def is_fist(landmarks):
             landmarks[20].y > landmarks[18].y and
             landmarks[4].y > landmarks[2].y)
 
+class OlafActor:
+    def __init__(self, frames):
+        self.frames = frames
+        self.active = False
+        self.frame_idx = 0
+        self.pos = (0, 0)
+        self.spawn_time = 0
+        self.duration = 4.0 # Seconds he stays visible
+        
+    def trigger(self):
+        if not self.active:
+            print("OLAF TRIGGERED BY VOICE!")
+            self.active = True
+            self.spawn_time = time.time()
+            width = self.frames[0].shape[1]
+            height = self.frames[0].shape[0]
+            self.pos = (random.randint(50, WIDTH - width - 50), random.randint(HEIGHT // 2, HEIGHT - height - 50))
+            self.frame_idx = 0
+
+    def update(self):
+        if self.active:
+            now = time.time()
+            if now - self.spawn_time > self.duration:
+                self.active = False
+            else:
+                self.frame_idx = (self.frame_idx + 1) % len(self.frames)
+
+    def draw(self, bg_img):
+        if self.active and self.frames:
+            frame = self.frames[self.frame_idx]
+            h, w, _ = frame.shape
+            x, y = self.pos
+            
+            # Extract RGB and Alpha
+            olaf_rgb = frame[:, :, :3]
+            olaf_alpha = frame[:, :, 3] / 255.0  # Normalize to [0.0, 1.0]
+            olaf_alpha = np.expand_dims(olaf_alpha, axis=2) # Shape (H, W, 1)
+
+            # Extract Background ROI
+            bg_roi = bg_img[y:y+h, x:x+w]
+            
+            # Blending: Olaf * Alpha + Background * (1 - Alpha)
+            blended_roi = (olaf_rgb * olaf_alpha + bg_roi * (1 - olaf_alpha)).astype(np.uint8)
+            
             # Paste back
             bg_img[y:y+h, x:x+w] = blended_roi
+
+def listen_for_olaf(olaf_actor):
+    recognizer = sr.Recognizer()
+    mic = sr.Microphone()
+    print("Voice Recognition for Elsa3 Started. Say 'Hi Olaf'!")
+    
+    while True:
+        with mic as source:
+            recognizer.adjust_for_ambient_noise(source)
+            try:
+                audio = recognizer.listen(source, timeout=5, phrase_time_limit=3)
+                text = recognizer.recognize_google(audio).lower()
+                print(f"Elsa3 Heard: {text}")
+                if "hi olaf" in text or "hey olaf" in text:
+                    olaf_actor.trigger()
+            except sr.WaitTimeoutError:
+                pass
+            except sr.UnknownValueError:
+                pass
+            except Exception as e:
+                print(f"Voice Error: {e}")
+                time.sleep(1)
+
 
 def main():
     download_models()
@@ -208,6 +304,10 @@ def main():
     else:
         print(f"Warning: {BACKGROUND_IMAGE_PATH} not found.")
 
+    # Load Olaf Frames
+    olaf_frames = load_gif_frames(OLAF_GIF_PATH, size=(200, 200))
+    olaf = OlafActor(olaf_frames)
+
     # Initialize Landmarkers
     face_base = python.BaseOptions(model_asset_path=FACE_MODEL_FILE)
     face_options = vision.FaceLandmarkerOptions(
@@ -238,6 +338,10 @@ def main():
     except Exception as e:
         print(f"Failed to load MediaPipe tasks: {e}")
         return
+
+    # Start voice listening thread
+    voice_thread = threading.Thread(target=listen_for_olaf, args=(olaf,), daemon=True)
+    voice_thread.start()
 
     particles = []
     
@@ -293,6 +397,11 @@ def main():
         final_frame_rgb = rgb_frame
         
         if show_ice_background and ice_bg is not None:
+             # Update Olaf logic
+             olaf.update()
+             temp_bg = ice_bg.copy()
+             olaf.draw(temp_bg)
+
              # Segmentation
              segmentation_result = segmenter.segment_for_video(mp_image, timestamp)
              if segmentation_result.confidence_masks:
@@ -304,10 +413,10 @@ def main():
                  mask_np = confidence_mask.numpy_view()
                  person_mask = mask_np.reshape(HEIGHT, WIDTH, 1)
                  
-                 # Blend: pixel * mask + ice_bg * (1 - mask)
-                 final_frame_rgb = (rgb_frame * person_mask + ice_bg * (1 - person_mask)).astype(np.uint8)
+                 # Blend: pixel * mask + temp_bg (with Olaf) * (1 - mask)
+                 final_frame_rgb = (rgb_frame * person_mask + temp_bg * (1 - person_mask)).astype(np.uint8)
              else:
-                 final_frame_rgb = ice_bg
+                 final_frame_rgb = temp_bg
 
 
 
