@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.task
+*.tflite
+*.mp3
+*.jpg
+*.png
+.DS_Store
+.python-version
