@@ -393,30 +393,39 @@ def main():
              screen.blit(text, (WIDTH//2 - 350, 100))
 
 
-        # BACKGROUND RENDERING
-        final_frame_rgb = rgb_frame
+        # BACKGROUND & OLAF RENDERING
+        base_bg = ice_bg if (show_ice_background and ice_bg is not None) else rgb_frame
+        final_frame_rgb = base_bg
         
-        if show_ice_background and ice_bg is not None:
-             # Update Olaf logic
-             olaf.update()
-             temp_bg = ice_bg.copy()
-             olaf.draw(temp_bg)
-
-             # Segmentation
-             segmentation_result = segmenter.segment_for_video(mp_image, timestamp)
-             if segmentation_result.confidence_masks:
-                 if len(segmentation_result.confidence_masks) > 1:
-                     confidence_mask = segmentation_result.confidence_masks[1]
-                 else:
-                     confidence_mask = segmentation_result.confidence_masks[0]
-                     
-                 mask_np = confidence_mask.numpy_view()
-                 person_mask = mask_np.reshape(HEIGHT, WIDTH, 1)
-                 
-                 # Blend: pixel * mask + temp_bg (with Olaf) * (1 - mask)
-                 final_frame_rgb = (rgb_frame * person_mask + temp_bg * (1 - person_mask)).astype(np.uint8)
-             else:
-                 final_frame_rgb = temp_bg
+        # Always update Olaf
+        olaf.update()
+        
+        # We need segmentation if we are showing the virtual background OR if Olaf is active
+        # to keep Olaf behind the person.
+        should_segment = show_ice_background or olaf.active
+        
+        if olaf.active or show_ice_background:
+            temp_bg = base_bg.copy()
+            if olaf.active:
+                olaf.draw(temp_bg)
+            
+            if should_segment:
+                segmentation_result = segmenter.segment_for_video(mp_image, timestamp)
+                if segmentation_result.confidence_masks:
+                    if len(segmentation_result.confidence_masks) > 1:
+                        confidence_mask = segmentation_result.confidence_masks[1]
+                    else:
+                        confidence_mask = segmentation_result.confidence_masks[0]
+                    
+                    mask_np = confidence_mask.numpy_view()
+                    person_mask = mask_np.reshape(HEIGHT, WIDTH, 1)
+                    
+                    # Blend: original camera person + temp_bg (with Olaf/Virtual BG) * (1 - mask)
+                    final_frame_rgb = (rgb_frame * person_mask + temp_bg * (1 - person_mask)).astype(np.uint8)
+                else:
+                    final_frame_rgb = temp_bg
+            else:
+                final_frame_rgb = temp_bg
 
 
 
