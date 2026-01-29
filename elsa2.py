@@ -7,6 +7,7 @@ import time
 import os
 import urllib.request
 import numpy as np
+from PIL import Image, ImageSequence
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
@@ -22,10 +23,9 @@ SEGMENTATION_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/image_
 
 BACKGROUND_IMAGE_PATH = "ice_background.jpg"
 BACKGROUND_AUDIO_PATH = "let_it_go.mp3"
+OLAF_GIF_PATH = "olaf_gif2.gif"
 
 # --- Constants for Face Landmarks ---
-LEFT_EYE = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
-RIGHT_EYE = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
 FOREHEAD_TOP = 10
 
 def download_models():
@@ -42,6 +42,26 @@ def download_models():
                 print("Download Complete.")
             except Exception as e:
                 print(f"Error downloading {file}: {e}")
+
+def load_gif_frames(path, size=None):
+    if not os.path.exists(path):
+        return []
+    with Image.open(path) as img:
+        frames = []
+        for frame in ImageSequence.Iterator(img):
+            frame_rgba = frame.convert('RGBA')
+            if size:
+                frame_rgba = frame_rgba.resize(size, Image.Resampling.LANCZOS)
+            
+            # Simple Background Removal: turn white/near-white to transparent
+            data = np.array(frame_rgba)
+            r, g, b, a = data[:,:,0], data[:,:,1], data[:,:,2], data[:,:,3]
+            # Threshold for "white": all channels > 240
+            white_mask = (r > 240) & (g > 240) & (b > 240)
+            data[white_mask, 3] = 0 # Set alpha to 0 for white pixels
+            
+            frames.append(data)
+        return frames
 
 # --- Classes ---
 class Diamond:
@@ -122,16 +142,6 @@ class Snowflake:
             
             surface.blit(s, (self.x - center, self.y - center))
 
-def draw_makeup_eye(surface, landmarks, indices, color):
-    points = []
-    for idx in indices:
-        lm = landmarks[idx]
-        points.append((int(lm.x * WIDTH), int(lm.y * HEIGHT)))
-    
-    if len(points) > 2:
-        poly_surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        pygame.draw.polygon(poly_surf, color, points)
-        surface.blit(poly_surf, (0, 0))
 
 def is_palm_open(landmarks):
     return (landmarks[8].y < landmarks[6].y and
@@ -183,6 +193,53 @@ def is_fist(landmarks):
             landmarks[20].y > landmarks[18].y and
             landmarks[4].y > landmarks[2].y)
 
+class OlafActor:
+    def __init__(self, frames):
+        self.frames = frames
+        self.active = False
+        self.frame_idx = 0
+        self.pos = (0, 0)
+        self.last_spawn_time = 0
+        self.duration = 4.0 # Seconds he stays visible
+        self.cooldown = 3.0 # Min seconds between spawns
+        
+    def update(self):
+        now = time.time()
+        if not self.active:
+            if now - self.last_spawn_time > self.cooldown + random.uniform(2, 6):
+                self.active = True
+                self.spawn_time = now
+                width = self.frames[0].shape[1]
+                height = self.frames[0].shape[0]
+                self.pos = (random.randint(50, WIDTH - width - 50), random.randint(HEIGHT // 2, HEIGHT - height - 50))
+                self.frame_idx = 0
+        else:
+            if now - self.spawn_time > self.duration:
+                self.active = False
+                self.last_spawn_time = now
+            else:
+                self.frame_idx = (self.frame_idx + 1) % len(self.frames)
+
+    def draw(self, bg_img):
+        if self.active and self.frames:
+            frame = self.frames[self.frame_idx]
+            h, w, _ = frame.shape
+            x, y = self.pos
+            
+            # Extract RGB and Alpha
+            olaf_rgb = frame[:, :, :3]
+            olaf_alpha = frame[:, :, 3] / 255.0  # Normalize to [0.0, 1.0]
+            olaf_alpha = np.expand_dims(olaf_alpha, axis=2) # Shape (H, W, 1)
+
+            # Extract Background ROI
+            bg_roi = bg_img[y:y+h, x:x+w]
+            
+            # Blending: Olaf * Alpha + Background * (1 - Alpha)
+            blended_roi = (olaf_rgb * olaf_alpha + bg_roi * (1 - olaf_alpha)).astype(np.uint8)
+            
+            # Paste back
+            bg_img[y:y+h, x:x+w] = blended_roi
+
 def main():
     download_models()
     
@@ -221,6 +278,10 @@ def main():
         ice_bg = cv2.cvtColor(ice_bg, cv2.COLOR_BGR2RGB)
     else:
         print(f"Warning: {BACKGROUND_IMAGE_PATH} not found.")
+
+    # Load Olaf Frames
+    olaf_frames = load_gif_frames(OLAF_GIF_PATH, size=(200, 200))
+    olaf = OlafActor(olaf_frames)
 
     # Initialize Landmarkers
     face_base = python.BaseOptions(model_asset_path=FACE_MODEL_FILE)
@@ -282,6 +343,7 @@ def main():
         # Detect
         face_result = face_landmarker.detect_for_video(mp_image, timestamp)
         hand_result = hand_landmarker.detect_for_video(mp_image, timestamp)
+        segmentation_result = None
         
 
 
@@ -306,23 +368,27 @@ def main():
         final_frame_rgb = rgb_frame
         
         if show_ice_background and ice_bg is not None:
+             # Update Olaf logic
+             olaf.update()
+             temp_bg = ice_bg.copy()
+             olaf.draw(temp_bg)
+
              # Segmentation
              segmentation_result = segmenter.segment_for_video(mp_image, timestamp)
-             # Get confidence mask for 'person'
              if segmentation_result.confidence_masks:
-                 # Usually: [0]=Background, [1]=Person. If only one, assume it's the person mask?
                  if len(segmentation_result.confidence_masks) > 1:
                      confidence_mask = segmentation_result.confidence_masks[1]
                  else:
                      confidence_mask = segmentation_result.confidence_masks[0]
                      
                  mask_np = confidence_mask.numpy_view()
-                 
-                 # Robustly ensure shape is (HEIGHT, WIDTH, 1) for broadcasting with (HEIGHT, WIDTH, 3)
                  person_mask = mask_np.reshape(HEIGHT, WIDTH, 1)
                  
-                 # Blend: pixel * mask + bg * (1 - mask)
-                 final_frame_rgb = (rgb_frame * person_mask + ice_bg * (1 - person_mask)).astype(np.uint8)
+                 # Blend: pixel * mask + temp_bg (with Olaf) * (1 - mask)
+                 final_frame_rgb = (rgb_frame * person_mask + temp_bg * (1 - person_mask)).astype(np.uint8)
+             else:
+                 final_frame_rgb = temp_bg
+
 
 
         # AUDIO TRIGGER
@@ -351,10 +417,6 @@ def main():
         if face_result.face_landmarks:
             face_lms = face_result.face_landmarks[0]
             
-            # Makeup
-            shimmer_color = (0, 255, 255, 80) 
-            draw_makeup_eye(screen, face_lms, LEFT_EYE, shimmer_color)
-            draw_makeup_eye(screen, face_lms, RIGHT_EYE, shimmer_color)
             
             # Crown
             head_top = face_lms[FOREHEAD_TOP]
