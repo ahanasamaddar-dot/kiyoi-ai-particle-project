@@ -70,12 +70,17 @@ async function init() {
 }
 
 async function startWebcam() {
-    const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: WIDTH, height: HEIGHT }
-    });
-    video.srcObject = stream;
-    canvas.width = WIDTH;
-    canvas.height = HEIGHT;
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: WIDTH, height: HEIGHT }
+        });
+        video.srcObject = stream;
+        canvas.width = WIDTH;
+        canvas.height = HEIGHT;
+    } catch (err) {
+        console.error("Webcam Error:", err);
+        showStatus("Please allow camera access!");
+    }
 }
 
 // --- Classes ---
