@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elsa Magic AR - Experience the Magic</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div id="app-container">
+        <!-- Landing Page / Start Screen -->
+        <div id="overlay" class="overlay">
+            <div class="content">
+                <h1>Elsa Magic AR</h1>
+                <p>Prepare to unleash your inner magic.</p>
+                <div class="instructions-preview">
+                    <span>👋 Waves for Snow</span>
+                    <span>✌️ Peace for Ice World</span>
+                    <span>🗣️ Say "Hi Olaf"</span>
+                </div>
+                <button id="start-btn" class="magical-btn">Start the Magic</button>
+            </div>
+        </div>
+
+        <!-- Camera and AR View -->
+        <div id="ar-view" class="hidden">
+            <video id="webcam" autoplay playsinline muted></video>
+            <canvas id="output-canvas"></canvas>
+
+            <div id="ui-layer">
+                <div class="status-badge" id="gesture-status">Ready for Magic</div>
+                <div class="controls">
+                    <button id="toggle-bg-btn" class="icon-btn" title="Toggle Ice World">❄️</button>
+                    <button id="mute-btn" class="icon-btn" title="Mute Music">🔊</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="hidden">
+            <div class="snowflake-spinner">❄️</div>
+            <p>Gathering Ice Crystals...</p>
+        </div>
+    </div>
+
+    <!-- Assets (Hidden) -->
+    <audio id="bg-music" src="let_it_go.mp3" loop></audio>
+    <img id="ice-bg" src="ice_background.jpg" style="display:none">
+    <img id="olaf-gif" src="olaf_gif2.gif" style="display:none">
+
+    <!-- MediaPipe Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs" type="module"></script>
+    <script src="script.js" type="module"></script>
+</body>
+
+</html>

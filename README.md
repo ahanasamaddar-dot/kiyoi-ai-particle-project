@@ -1,4 +1,16 @@
-## How to Get Started
+# Elsa Magic AR
+
+Welcome to the magical world of Elsa! You can now access this project in two ways:
+
+### 🚀 **Option 1: Run in Browser (Easiest)**
+Access the live version directly on your computer without installing anything! 
+**[Live Web Version](https://ahanasamaddar-dot.github.io/kiyoi-ai-particle-project/)**
+*(Note: You will need to allow Camera and Microphone access in your browser.)*
+
+---
+
+### 🐍 Option 2: Run with Python (Advanced)
+If you want to run the code locally or modify it, follow the instructions below.
 
 If you received this project as a **ZIP file** (`ElsaMagicAR.zip`), follow these steps first:
 
