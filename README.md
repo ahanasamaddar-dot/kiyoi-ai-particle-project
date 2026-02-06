@@ -1,6 +1,14 @@
-# Elsa Magic AR Project
+## How to Get Started
 
-This is an Augmented Reality (AR) application that uses your webcam to create Elsa-themed magical effects. 
+If you received this project as a **ZIP file** (`ElsaMagicAR.zip`), follow these steps first:
+
+1. **Extract the Files**:
+   - **Windows**: Right-click the `ElsaMagicAR.zip` file and select **"Extract All..."**, then click **"Extract"**.
+   - **Mac**: Double-click the `ElsaMagicAR.zip` file.
+2. **Open the Folder**: Open the new folder named `ElsaMagicAR` that was just created.
+3. **Follow the Setup**: Continue to the **Setup Instructions** section below to install Python and the required libraries.
+
+---
 
 ## Features
 - **Ice World Toggle**: Perform a **Peace Sign** with your hand or press the **'B'** key to toggle the virtual background and "Let It Go" music.
