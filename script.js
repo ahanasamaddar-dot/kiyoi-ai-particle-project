@@ -75,8 +75,15 @@ async function startWebcam() {
             video: { width: WIDTH, height: HEIGHT }
         });
         video.srcObject = stream;
-        canvas.width = WIDTH;
-        canvas.height = HEIGHT;
+
+        return new Promise((resolve) => {
+            video.onloadedmetadata = () => {
+                video.play();
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                resolve();
+            };
+        });
     } catch (err) {
         console.error("Webcam Error:", err);
         showStatus("Please allow camera access!");
@@ -176,7 +183,7 @@ function isOkSign(landmarks) {
 
 // --- Render Loop ---
 function renderLoop() {
-    if (video.currentTime !== lastVideoTime) {
+    if (video.currentTime !== lastVideoTime && video.videoWidth > 0 && video.videoHeight > 0) {
         lastVideoTime = video.currentTime;
         const startTimeMs = performance.now();
 
